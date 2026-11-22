@@ -1,0 +1,112 @@
+.code-embed {
+    display: block;
+    margin: 0.7em 0;
+    border-radius: var(--code-radius, 4px);
+    background: var(--code-background);
+    text-align: left;
+    direction: ltr;
+    overflow: hidden;
+}
+.code-embed details {
+    position: relative;
+}
+.code-embed summary {
+    cursor: pointer;
+    padding: 0.7em 5.5em 0.7em 0.8em;
+    color: var(--text-muted);
+    font-size: var(--font-smaller);
+    font-family: var(--font-monospace);
+    overflow-wrap: anywhere;
+}
+.code-embed-tools {
+    display: flex;
+    position: absolute;
+    top: 0.3em;
+    right: 0.4em;
+    gap: 2px;
+}
+.code-embed-body {
+    display: flex;
+    overflow: auto;
+    padding: 0.7em;
+}
+.code-embed .code-embed-body pre {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    overflow: visible;
+    white-space: pre;
+    text-align: left;
+    font-family: var(--font-monospace);
+    font-size: var(--code-size);
+    line-height: 1.5;
+    tab-size: 4;
+    min-width: 0;
+}
+.code-embed .code-embed-body code {
+    display: block;
+    padding: 0;
+    background: transparent;
+    font: inherit;
+    white-space: inherit;
+    text-align: left;
+}
+.code-embed .code-embed-body .code-embed-lines {
+    padding-right: 1em;
+    margin-right: 1em;
+    border-right: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    text-align: right;
+    user-select: none;
+    flex-shrink: 0;
+}
+.code-embed-wrap .code-embed-body pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    flex: 1;
+}
+.code-embed-wrap .code-embed-body.code-embed-grid {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 1em;
+}
+.code-embed-number {
+    font-family: var(--font-monospace);
+    font-size: var(--code-size);
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-align: right;
+    user-select: none;
+}
+.code-embed-error {
+    padding: 0.8em;
+    color: var(--text-error);
+}
+.code-embed-grid > pre {
+    min-height: 1.5em;
+}
+
+/* 테마의 아이콘 크기와 포커스 스타일을 유지하고 일반 텍스트 버튼 장식만 제거합니다. */
+.code-embed .code-embed-action {
+    padding: 5px;
+    height: auto;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--text-muted);
+}
+.code-embed .code-embed-action:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+@media (hover: hover) {
+    .code-embed-tools {
+        opacity: 0;
+    }
+    .code-embed:hover .code-embed-tools,
+    .code-embed:focus-within .code-embed-tools {
+        opacity: 1;
+    }
+}

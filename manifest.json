@@ -1,0 +1,9 @@
+{
+    "id": "embed-code",
+    "name": "Embed Code",
+    "version": "1.0.0",
+    "minAppVersion": "1.5.0",
+    "description": "Embed code files within your vault with original line ranges in reading view and Live Preview.",
+    "author": "김동주 <hepheir@gmail.com>",
+    "isDesktopOnly": false
+}

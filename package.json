@@ -1,0 +1,25 @@
+{
+    "name": "embed-code",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "build": "tsc --noEmit && tsx esbuild.config.ts",
+        "test": "tsx --test tests/*.test.ts",
+        "dev": "tsx esbuild.config.ts --watch",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "devDependencies": {
+        "@codemirror/language": "^6.0.0",
+        "@codemirror/state": "^6.0.0",
+        "@codemirror/view": "^6.43.13",
+        "@types/node": "^22.0.0",
+        "esbuild": "^0.25.0",
+        "obsidian": "1.14.4",
+        "prettier": "^3.10.1",
+        "tsx": "^4.0.0",
+        "typescript": "^5.0.0"
+    },
+    "packageManager": "pnpm@11.21.0",
+    "author": "김동주 <hepheir@gmail.com>"
+}
