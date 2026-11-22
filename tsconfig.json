@@ -11,5 +11,10 @@
         "noUnusedLocals": true,
         "noUnusedParameters": true
     },
-    "include": ["src/**/*.ts", "tests/**/*.ts", "esbuild.config.ts"]
+    "include": [
+        "src/**/*.ts",
+        "tests/**/*.ts",
+        "esbuild.config.ts",
+        "scripts/**/*.ts"
+    ]
 }

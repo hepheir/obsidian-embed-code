@@ -6,7 +6,7 @@ Vault 내부 코드 파일의 전체 내용이나 지정한 행을 Obsidian 노�
 
 ZIP 파일은 압축을 풀고 `embed-code` 폴더를 Vault의 `.obsidian/plugins/`에 넣으세요. Obsidian을 다시 불러온 뒤 커뮤니티 플러그인에서 **Embed Code**를 활성화하세요.
 
-직접 빌드하려면 Node.js 22 이상과 `package.json`에 지정된 pnpm 버전을 사용하세요.
+직접 빌드하려면 Node.js 24.15 이상과 `package.json`에 지정된 pnpm 버전을 사용하세요.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -74,3 +74,28 @@ TypeScript와 pnpm을 사용하며, 들여쓰기는 공백 4칸으로 통일합�
 - `pnpm format:check`: 파일을 수정하지 않고 포맷 검사
 
 구조 변경 전 [ARCHITECTURE.md](ARCHITECTURE.md)를 먼저 수정하세요.
+
+## 자동 릴리즈
+
+`main`에 push하면 GitHub Actions가 포맷 검사, 테스트, 빌드를 실행합니다. 검사를 통과하면 마지막 릴리즈 이후 커밋으로 다음 버전을 정합니다.
+
+| 커밋 예시                                                     | 버전 변경                 |
+| ------------------------------------------------------------- | ------------------------- |
+| `fix: 행 번호 오류 수정`                                      | 패치: `1.0.0` → `1.0.1`   |
+| `feat: 새 표시 옵션 추가`                                     | 마이너: `1.0.0` → `1.1.0` |
+| `feat!: 임베드 문법 변경` 또는 본문에 `BREAKING CHANGE:` 포함 | 메이저: `1.0.0` → `2.0.0` |
+| `docs:`, `chore:`, `refactor:` 등만 있는 경우                 | 릴리즈 생략               |
+
+처음 배포할 버전은 `1.0.0`입니다. 여러 변경을 한 번에 push하면 가장 큰 버전 변경을 적용합니다. PR을 squash merge한다면 최종 커밋 제목도 위 규칙에 맞춰 작성하세요.
+
+릴리즈 시 다음 작업을 자동으로 처리합니다.
+
+- `package.json`과 `manifest.json`의 버전을 맞추고 `versions.json`에 최소 Obsidian 버전을 기록합니다.
+- `CHANGELOG.md`와 버전 파일을 자동 커밋합니다. 버전은 직접 올리지 않아도 됩니다.
+- `v` 없는 버전 태그와 GitHub Release를 만들고 `main.js`, `manifest.json`, `styles.css`, `embed-code.zip`을 첨부합니다.
+
+[GitHub Releases](https://github.com/hepheir/obsidian-embed-code/releases)에서 배포 파일을 받으세요. ZIP에는 `embed-code/` 설치 폴더가 들어 있습니다.
+
+자동화는 저장소에서 제공하는 `GITHUB_TOKEN`을 사용합니다. 별도 개인 토큰은 필요하지 않습니다. 브랜치 보호 규칙으로 봇의 `main` push를 막으면 자동 커밋 단계가 실패하므로 해당 저장소 정책을 확인해야 합니다.
+
+실패한 경우 GitHub의 **Actions → Release**에서 오류를 확인하세요. 원인을 수정한 뒤 작업을 다시 실행할 수 있습니다. 실패한 작업이 이미 태그나 Release를 만들었다면 기존 상태를 먼저 확인하고, 누락된 첨부 파일은 같은 릴리즈에 올려 복구하세요. `pnpm release --dry-run`은 버전 판정만 확인하며 파일 갱신이나 릴리즈 게시는 하지 않습니다.

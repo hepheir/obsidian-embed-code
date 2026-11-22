@@ -70,3 +70,24 @@ Prettier를 사용하며 들여쓰기는 탭 문자 대신 공백 4칸으로 통
 `pnpm build`는 미사용 변수·매개변수를 포함한 TypeScript 검사 후 설치 파일을 `dist/embed-code/`에 생성한다. `pnpm dev`도 같은 경로를 사용한다. Obsidian과 CodeMirror는 호스트가 제공하므로 번들에서 제외한다.
 
 `pnpm test`는 행 범위, 원문 보존, 동시 요청 공유에 관한 핵심 단위 테스트만 실행한다.
+
+## 자동 릴리즈
+
+`main`에 push하면 GitHub Actions가 포맷, 핵심 테스트, 빌드를 검사한 뒤 semantic-release를 실행한다. 같은 브랜치의 배포는 한 번에 하나씩 실행한다.
+
+```mermaid
+flowchart LR
+    Push[main push] --> Check[포맷 검사 · 테스트 · 빌드]
+    Check --> Analyze[커밋으로 다음 버전 결정]
+    Analyze --> Prepare[scripts/prepare-release.ts]
+    Prepare --> Versions[package.json · manifest.json · versions.json]
+    Prepare --> Build[버전 반영 후 빌드 · ZIP 생성]
+    Build --> Commit[버전 파일과 CHANGELOG.md 자동 커밋]
+    Commit --> Release[버전 태그 · GitHub Release · 파일 첨부]
+```
+
+`fix`는 패치, `feat`는 마이너, `!` 또는 `BREAKING CHANGE`는 메이저 버전을 올린다. 그 외 변경만 있으면 릴리즈하지 않는다. 첫 릴리즈는 `1.0.0`이다. 태그에는 `v`를 붙이지 않는다.
+
+semantic-release 설정은 `release.config.cjs`에서 관리한다. 준비 스크립트는 버전 파일을 갱신하고 `dist/embed-code.zip`을 만든다. `versions.json`은 배포 버전별 최소 Obsidian 버전을 기록한다. 자동 커밋은 `[skip ci]`로 재실행을 막으며 본문은 한국어로 작성한다. GitHub Release에는 설치 파일 세 개와 ZIP을 첨부한다.
+
+배포 권한은 GitHub Actions의 `GITHUB_TOKEN`을 사용한다. 토큰으로 생성한 태그가 다른 워크플로를 실행할 것으로 가정하지 않고, 같은 작업에서 파일 첨부까지 마친다.
