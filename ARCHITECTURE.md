@@ -91,3 +91,18 @@ flowchart LR
 semantic-release 설정은 `release.config.cjs`에서 관리한다. 준비 스크립트는 버전 파일을 갱신하고 `dist/embed-code.zip`을 만든다. `versions.json`은 배포 버전별 최소 Obsidian 버전을 기록한다. 자동 커밋은 `[skip ci]`로 재실행을 막으며 본문은 한국어로 작성한다. GitHub Release에는 설치 파일 세 개와 ZIP을 첨부한다.
 
 배포 권한은 GitHub Actions의 `GITHUB_TOKEN`을 사용한다. 토큰으로 생성한 태그가 다른 워크플로를 실행할 것으로 가정하지 않고, 같은 작업에서 파일 첨부까지 마친다.
+
+## 코드 블록 파일 추출
+
+```mermaid
+flowchart LR
+    Reading[읽기 화면 우클릭] --> UI[extract-ui.ts: 대상 식별과 메뉴·모달]
+    Editor[라이브 프리뷰 editor-menu] --> UI
+    UI --> Service[extraction.ts: 원문 추적·저장·치환]
+    Service --> Core[extraction-core.ts: fence 파싱·변경 추적·경로 검증]
+    Service --> Vault[Vault / 열린 노트 에디터]
+```
+
+UI는 원본 위치로 대상을 식별하고 공통 변환 서비스에 전달한다. 서비스는 DOM이나 마우스 이벤트에 의존하지 않으며 입력·확인은 콜백으로 받는다. 아이콘 버튼은 추가하지 않는다. Mermaid도 원본 fence를 추출하며 `.mmd` 임베드는 원문으로 표시한다.
+
+저장 전에 원문과 덮어쓰기 대상을 다시 검사한다. 파일 저장 후에만 노트를 치환하며, 치환 실패 시 저장된 경로를 안내한다. 열린 에디터의 변경은 추적하고 대상에 닿은 변경은 변환을 중단한다. 실행 취소는 노트만 되돌린다.

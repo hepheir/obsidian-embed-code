@@ -3,6 +3,7 @@ import type CodeEmbed from "./main";
 import { getFileExtension } from "./core";
 
 export interface CodeEmbedSettings {
+    extractionVersion: number;
     enabled: boolean;
     extensions: string;
     lineNumbers: boolean;
@@ -12,9 +13,10 @@ export interface CodeEmbedSettings {
 }
 
 const DEFAULT_SETTINGS: CodeEmbedSettings = {
+    extractionVersion: 1,
     enabled: true,
     extensions:
-        "py,js,ts,tsx,jsx,json,html,css,scss,java,c,cpp,h,hpp,cs,go,rs,rb,php,sh,bash,sql,yaml,yml,toml,xml,txt,md,swift,kt",
+        "py,js,ts,tsx,jsx,json,html,css,scss,java,c,cpp,h,hpp,cs,go,rs,rb,php,sh,bash,sql,yaml,yml,toml,xml,txt,md,mmd,swift,kt",
     lineNumbers: true,
     collapsed: false,
     wrap: false,
@@ -25,9 +27,18 @@ export function loadSettings(
     storedSettings: Partial<CodeEmbedSettings> | null,
 ): CodeEmbedSettings {
     // 알 수 없는 설정 항목은 제외하고, 빠진 값은 기본값으로 채웁니다.
+    const extensions =
+        storedSettings?.extensions ?? DEFAULT_SETTINGS.extensions;
     return {
+        extractionVersion: 1,
         enabled: storedSettings?.enabled ?? DEFAULT_SETTINGS.enabled,
-        extensions: storedSettings?.extensions ?? DEFAULT_SETTINGS.extensions,
+        extensions:
+            storedSettings?.extractionVersion === 1 ||
+            extensions
+                .split(/[\s,]+/)
+                .some((ext) => ext.replace(/^\./, "").toLowerCase() === "mmd")
+                ? extensions
+                : `${extensions},mmd`,
         lineNumbers:
             storedSettings?.lineNumbers ?? DEFAULT_SETTINGS.lineNumbers,
         collapsed: storedSettings?.collapsed ?? DEFAULT_SETTINGS.collapsed,
