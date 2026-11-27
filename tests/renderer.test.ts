@@ -126,13 +126,52 @@ test("filename modifier clicks share source opening with the toolbar", async () 
             .querySelector('[aria-label="원본 열기"]')!
             .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         assert.equal(opened.at(-1), file);
-        const edit = container.querySelector('[aria-label="임베드 수정"]')!;
+        assert.equal(
+            container.querySelector('[aria-label="임베드 수정"]'),
+            null,
+        );
+        assert.equal(
+            container.querySelectorAll(".code-embed-action").length,
+            2,
+        );
         const count = opened.length;
         const wasOpen = details.open;
-        edit.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        let doubleBubbled = 0;
+        container.addEventListener("dblclick", () => doubleBubbled++);
+        const doubleClick = new window.MouseEvent("dblclick", {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+        });
+        filename.dispatchEvent(doubleClick);
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(doubleClick.defaultPrevented, true);
+        assert.equal(doubleBubbled, 0);
         assert.equal(edits, 1);
         assert.equal(opened.length, count);
         assert.equal(details.open, wasOpen);
+        // 기본 삼각형은 summary의 일부이며 파일명 이벤트를 거치지 않습니다.
+        container
+            .querySelector("summary")!
+            .dispatchEvent(
+                new window.MouseEvent("dblclick", { bubbles: true }),
+            );
+        for (const modifiers of [
+            { ctrlKey: true },
+            { metaKey: true },
+            { shiftKey: true },
+            { altKey: true },
+            { button: 2 },
+        ]) {
+            filename.dispatchEvent(
+                new window.MouseEvent("dblclick", {
+                    bubbles: true,
+                    ...modifiers,
+                }),
+            );
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(edits, 1);
         fail = true;
         click({ metaKey: true });
         await new Promise((resolve) => setImmediate(resolve));

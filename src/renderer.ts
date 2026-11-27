@@ -59,11 +59,27 @@ export function renderCodeSnippet(
             (error: unknown) => new Notice(String(error)),
         );
     };
+    filename.ondblclick = (event) => {
+        if (
+            event.button !== 0 ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            event.shiftKey
+        ) {
+            return;
+        }
+        // 파일명에서만 편집을 실행하고 상위 에디터의 더블클릭 처리를 막습니다.
+        event.preventDefault();
+        event.stopPropagation();
+        void Promise.resolve()
+            .then(() => options.onEdit())
+            .catch((error: unknown) => new Notice(String(error)));
+    };
+    setTooltip(filename, "더블클릭하여 임베드 수정");
     summary.append(filename);
     details.append(summary);
-    details.append(
-        createToolbar(app, snippet.text, sourcePath, options.onEdit),
-    );
+    details.append(createToolbar(app, snippet.text, sourcePath));
     const body = document.createElement("div");
     body.className = "code-embed-body";
     if (settings.lineNumbers) {
@@ -102,7 +118,6 @@ function createToolbar(
     app: App,
     sourceText: string,
     path: string,
-    onEdit: () => void | Promise<void>,
 ): HTMLElement {
     const toolbar = document.createElement("div");
     toolbar.className = "code-embed-tools";
@@ -130,7 +145,6 @@ function createToolbar(
     addIconButton("원본 열기", "external-link", () =>
         openSourceFile(app, path),
     );
-    addIconButton("임베드 수정", "pencil", async () => onEdit());
     return toolbar;
 }
 
