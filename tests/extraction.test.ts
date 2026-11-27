@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
     extractionPath,
+    automaticExtractionPath,
+    normalizeExtractionDirectory,
+    normalizeExtractionExtension,
     findFences,
     suggestedName,
     trackFence,
@@ -75,4 +78,43 @@ test("paths follow note-relative and root rules and reject unsafe embed paths", 
     assert.equal(suggestedName("mermaid"), "code.mmd");
     assert.equal(suggestedName("python"), "code.py");
     assert.equal(suggestedName("unknown"), "code.txt");
+});
+
+test("automatic names use local YYMMDDHHmmss, mapped and fallback extensions", () => {
+    const now = new Date(2026, 10, 28, 15, 30, 12);
+    assert.equal(
+        automaticExtractionPath("notes/회의록.md", "python", "", "txt", now),
+        "회의록_261128153012.py",
+    );
+    assert.equal(
+        automaticExtractionPath(
+            "notes/a.md",
+            "unknown",
+            "/code/nested/",
+            ".LOG",
+            now,
+        ),
+        "code/nested/a_261128153012.log",
+    );
+    assert.equal(
+        automaticExtractionPath(
+            "a.md",
+            "",
+            "",
+            "txt",
+            new Date(2026, 0, 2, 3, 4, 5),
+        ),
+        "a_260102030405.txt",
+    );
+    for (const path of [
+        "../x",
+        ".obsidian",
+        "a//b",
+        "a#b",
+        "https://x",
+        "a\\b",
+    ])
+        assert.throws(() => normalizeExtractionDirectory(path));
+    for (const ext of ["", "../py", "a/b", "a.b"])
+        assert.throws(() => normalizeExtractionExtension(ext));
 });

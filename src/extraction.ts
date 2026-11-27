@@ -1,8 +1,7 @@
 import { MarkdownView, TFile, TFolder, type Editor } from "obsidian";
 import type CodeEmbed from "./main";
 import {
-    extractionPath,
-    suggestedName,
+    automaticExtractionPath,
     trackFence,
     type Fence,
 } from "./extraction-core";
@@ -13,15 +12,7 @@ export interface ExtractionInput {
     text: string;
     fence: Fence;
 }
-export interface ExtractionPrompts {
-    path(
-        initial: string,
-        validate: (value: string) => string | null,
-    ): Promise<string | null>;
-    overwrite(path: string): Promise<boolean>;
-}
-
-// UI는 입력과 확인을 담당하고, 저장과 노트 업데이트는 이 서비스에 모읍니다.
+// 저장 후에만 원문을 치환하도록 저장과 노트 업데이트를 모읍니다.
 export class ExtractionService {
     private busy = false;
     private cancelled = false;
@@ -31,10 +22,7 @@ export class ExtractionService {
         });
     }
 
-    async extract(
-        input: ExtractionInput,
-        prompts: ExtractionPrompts,
-    ): Promise<void> {
+    async extract(input: ExtractionInput): Promise<void> {
         if (this.busy) throw Error("다른 추출 작업이 진행중입니다.");
         this.busy = true;
         const { app } = this.plugin;
@@ -72,59 +60,38 @@ export class ExtractionService {
         };
         let savedPath: string | undefined;
         try {
-            let initial = suggestedName(input.fence.language);
-            let path: string;
-            let existing: TFile | null;
-            let previous: string | null;
-            while (true) {
-                if (this.cancelled)
-                    throw Error("플러그인이 해제되어 추출을 중단했습니다.");
-                const entered = await prompts.path(initial, (value) => {
-                    try {
-                        const target = extractionPath(value, input.file.path);
-                        if (!supportsTarget(target, this.plugin.settings))
-                            return "설정에서 지원하지 않는 확장자입니다.";
-                        if (
-                            app.vault.getAbstractFileByPath(target) instanceof
-                            TFolder
-                        )
-                            return "같은 경로에 폴더가 있습니다.";
-                        return null;
-                    } catch (error) {
-                        return String(error);
-                    }
-                });
-                if (entered === null) return;
-                path = extractionPath(entered, input.file.path);
-                const target = app.vault.getAbstractFileByPath(path);
-                if (target && !(target instanceof TFile))
-                    throw Error("저장 경로에 폴더가 있습니다.");
-                existing = target;
-                previous = existing ? await app.vault.read(existing) : null;
-                if (!existing || (await prompts.overwrite(path))) break;
-                initial = entered;
-            }
+            const basePath = automaticExtractionPath(
+                input.file.path,
+                input.fence.language,
+                this.plugin.settings.extractionDirectory,
+                this.plugin.settings.extractionDefaultExtension,
+                new Date(),
+            );
+            if (!supportsTarget(basePath, this.plugin.settings))
+                throw Error(
+                    "설정에서 지원하지 않는 확장자입니다. 지원 확장자 설정을 확인하세요.",
+                );
+            const uniquePath = () => {
+                let candidate = basePath;
+                let suffix = 2;
+                const dot = basePath.lastIndexOf(".");
+                while (app.vault.getAbstractFileByPath(candidate))
+                    candidate = `${basePath.slice(0, dot)}_${suffix++}${basePath.slice(dot)}`;
+                return candidate;
+            };
+            let path = uniquePath();
             await validateSource();
             const parts = path.split("/");
             for (let i = 1; i < parts.length; i++) {
                 const folder = parts.slice(0, i).join("/");
-                if (!app.vault.getAbstractFileByPath(folder))
-                    await app.vault.createFolder(folder);
+                const existing = app.vault.getAbstractFileByPath(folder);
+                if (existing && !(existing instanceof TFolder))
+                    throw Error("저장 폴더 경로에 파일이 있습니다.");
+                if (!existing) await app.vault.createFolder(folder);
             }
             await validateSource();
-            if (existing instanceof TFile) {
-                if (app.vault.getAbstractFileByPath(path) !== existing)
-                    throw Error("저장 대상이 변경되었습니다.");
-                await app.vault.process(existing, (contents) => {
-                    if (contents !== previous)
-                        throw Error(
-                            "덮어쓰기 대상이 변경되었습니다. 다시 시도하세요.",
-                        );
-                    return input.fence.code;
-                });
-            } else {
-                await app.vault.create(path, input.fence.code);
-            }
+            path = uniquePath();
+            await app.vault.create(path, input.fence.code);
             savedPath = path;
             await validateSource();
             const replacement = `${input.fence.prefix}![[/${path}]]`;

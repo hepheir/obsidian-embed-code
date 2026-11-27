@@ -1,9 +1,21 @@
-import { PluginSettingTab, Setting } from "obsidian";
+import {
+    AbstractInputSuggest,
+    TFolder,
+    PluginSettingTab,
+    Setting,
+    type App,
+} from "obsidian";
 import type CodeEmbed from "./main";
 import { getFileExtension } from "./core";
+import {
+    normalizeExtractionDirectory,
+    normalizeExtractionExtension,
+} from "./extraction-core";
 
 export interface CodeEmbedSettings {
     extractionVersion: number;
+    extractionDirectory: string;
+    extractionDefaultExtension: string;
     enabled: boolean;
     extensions: string;
     lineNumbers: boolean;
@@ -14,6 +26,8 @@ export interface CodeEmbedSettings {
 
 const DEFAULT_SETTINGS: CodeEmbedSettings = {
     extractionVersion: 1,
+    extractionDirectory: "",
+    extractionDefaultExtension: "txt",
     enabled: true,
     extensions:
         "py,js,ts,tsx,jsx,json,html,css,scss,java,c,cpp,h,hpp,cs,go,rs,rb,php,sh,bash,sql,yaml,yml,toml,xml,txt,md,mmd,swift,kt",
@@ -31,6 +45,9 @@ export function loadSettings(
         storedSettings?.extensions ?? DEFAULT_SETTINGS.extensions;
     return {
         extractionVersion: 1,
+        extractionDirectory: storedSettings?.extractionDirectory ?? "",
+        extractionDefaultExtension:
+            storedSettings?.extractionDefaultExtension ?? "txt",
         enabled: storedSettings?.enabled ?? DEFAULT_SETTINGS.enabled,
         extensions:
             storedSettings?.extractionVersion === 1 ||
@@ -70,13 +87,53 @@ export function supportsTarget(
         .includes(getFileExtension(path));
 }
 
+// 공개 API로 기존 폴더의 부분 검색을 제공합니다.
+class FolderSuggest extends AbstractInputSuggest<string> {
+    constructor(
+        private vaultApp: App,
+        input: HTMLInputElement,
+        save: (value: string) => void,
+    ) {
+        super(vaultApp, input);
+        this.onSelect((value) => {
+            this.setValue(value);
+            save(value);
+            this.close();
+        });
+    }
+    getSuggestions(query: string): string[] {
+        const search = query.trim().replace(/^\//, "").toLowerCase();
+        return this.vaultApp.vault
+            .getAllLoadedFiles()
+            .filter(
+                (file): file is TFolder =>
+                    file instanceof TFolder && file.path !== "/",
+            )
+            .map((folder) => folder.path)
+            .filter(
+                (path) =>
+                    !path.split("/").some((part) => part.startsWith(".")) &&
+                    path.toLowerCase().includes(search),
+            )
+            .sort((a, b) => a.localeCompare(b));
+    }
+    renderSuggestion(value: string, el: HTMLElement): void {
+        el.setText(value);
+    }
+}
+
 export class EmbedSettings extends PluginSettingTab {
+    private folderSuggest?: FolderSuggest;
+    hide() {
+        this.folderSuggest?.close();
+    }
     constructor(readonly plugin: CodeEmbed) {
         super(plugin.app, plugin);
     }
 
     display() {
         const container = this.containerEl;
+        this.folderSuggest?.close();
         container.empty();
         container.createEl("h2", { text: "Embed Code" });
         const addToggleSetting = (
@@ -122,6 +179,49 @@ export class EmbedSettings extends PluginSettingTab {
                     await this.plugin.saveData(this.plugin.settings);
                 });
             });
+        const addExtractionSetting = (
+            name: string,
+            description: string,
+            key: "extractionDirectory" | "extractionDefaultExtension",
+            normalize: (value: string) => string,
+        ) => {
+            new Setting(container)
+                .setName(name)
+                .setDesc(description)
+                .addText((control) => {
+                    control.setValue(this.plugin.settings[key]);
+                    const save = (value: string) => {
+                        try {
+                            const normalized = normalize(value);
+                            control.inputEl.setCustomValidity("");
+                            this.plugin.settings[key] = normalized;
+                            void this.plugin.saveData(this.plugin.settings);
+                        } catch (error) {
+                            control.inputEl.setCustomValidity(String(error));
+                            control.inputEl.reportValidity();
+                        }
+                    };
+                    control.onChange(save);
+                    if (key === "extractionDirectory")
+                        this.folderSuggest = new FolderSuggest(
+                            this.app,
+                            control.inputEl,
+                            save,
+                        );
+                });
+        };
+        addExtractionSetting(
+            "기본 저장 디렉터리",
+            "Vault 루트 기준입니다. 빈 값은 Vault 루트이며, 없는 폴더는 추출할 때 생성합니다.",
+            "extractionDirectory",
+            normalizeExtractionDirectory,
+        );
+        addExtractionSetting(
+            "기본 확장자",
+            "코드 언어를 알 수 없을 때 사용합니다. 기본값은 txt이며 지원 확장자에도 포함되어야 합니다.",
+            "extractionDefaultExtension",
+            normalizeExtractionExtension,
+        );
         new Setting(container)
             .setName("지원 확장자")
             .setDesc("쉼표로 구분합니다.")

@@ -1,143 +1,33 @@
 import {
     MarkdownRenderChild,
     Menu,
-    Modal,
     Notice,
-    Setting,
     TFile,
     editorInfoField,
     editorLivePreviewField,
-    type App,
     type MarkdownPostProcessorContext,
 } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import type CodeEmbed from "./main";
 import { findFences } from "./extraction-core";
 import { resolveExtractionTarget } from "./extraction-target";
-import {
-    ExtractionService,
-    type ExtractionInput,
-    type ExtractionPrompts,
-} from "./extraction";
-
-class PathModal extends Modal {
-    private settled = false;
-    constructor(
-        app: App,
-        private initial: string,
-        private validate: (value: string) => string | null,
-        private finish: (value: string | null) => void,
-    ) {
-        super(app);
-    }
-    onOpen() {
-        this.titleEl.setText("파일로 추출");
-        let value = this.initial;
-        let submit = () => {};
-        new Setting(this.contentEl)
-            .setName("저장 경로")
-            .setDesc("노트 폴더 기준 상대 경로 또는 /로 시작하는 Vault 경로")
-            .addText((control) => {
-                control.setValue(value).onChange((next) => {
-                    value = next;
-                });
-                control.inputEl.addEventListener("keydown", (event) => {
-                    if (event.key === "Enter") submit();
-                });
-            });
-        const error = this.contentEl.createDiv({ attr: { role: "alert" } });
-        submit = () => {
-            const message = this.validate(value);
-            if (message) {
-                error.setText(message);
-                return;
-            }
-            this.settled = true;
-            this.finish(value);
-            this.close();
-        };
-        new Setting(this.contentEl).addButton((b) =>
-            b.setButtonText("추출").setCta().onClick(submit),
-        );
-    }
-    onClose() {
-        if (!this.settled) this.finish(null);
-        this.contentEl.empty();
-    }
-}
-
-class OverwriteModal extends Modal {
-    private accepted = false;
-    constructor(
-        app: App,
-        private path: string,
-        private finish: (value: boolean) => void,
-    ) {
-        super(app);
-    }
-    onOpen() {
-        this.titleEl.setText("파일을 덮어쓰시겠습니까?");
-        this.contentEl.createEl("p", { text: this.path });
-        new Setting(this.contentEl)
-            .addButton((b) =>
-                b.setButtonText("취소").onClick(() => this.close()),
-            )
-            .addButton((b) =>
-                b
-                    .setButtonText("덮어쓰기")
-                    .setWarning()
-                    .onClick(() => {
-                        this.accepted = true;
-                        this.close();
-                    }),
-            );
-    }
-    onClose() {
-        this.finish(this.accepted);
-        this.contentEl.empty();
-    }
-}
+import { ExtractionService, type ExtractionInput } from "./extraction";
 
 export function registerExtraction(plugin: CodeEmbed): void {
     const service = new ExtractionService(plugin);
     const sections = new WeakMap<HTMLElement, MarkdownPostProcessorContext>();
-    const modals = new Set<Modal>();
     const children = new Set<MarkdownRenderChild>();
     plugin.register(() => {
         for (const child of children) child.unload();
     });
-    const openModal = (modal: Modal) => {
-        modals.add(modal);
-        const close = modal.onClose.bind(modal);
-        modal.onClose = () => {
-            modals.delete(modal);
-            close();
-        };
-        modal.open();
-    };
-    plugin.register(() => {
-        for (const modal of modals) modal.close();
-    });
-    const prompts: ExtractionPrompts = {
-        path: (initial, validate) =>
-            new Promise((resolve) =>
-                openModal(
-                    new PathModal(plugin.app, initial, validate, resolve),
-                ),
-            ),
-        overwrite: (path) =>
-            new Promise((resolve) =>
-                openModal(new OverwriteModal(plugin.app, path, resolve)),
-            ),
-    };
     const addItem = (menu: Menu, input: ExtractionInput) => {
         menu.addItem((item) =>
             item
-                .setTitle("파일로 추출…")
+                .setTitle("파일로 추출")
                 .setIcon("file-output")
                 .onClick(() => {
                     void service
-                        .extract(input, prompts)
+                        .extract(input)
                         .catch((error: unknown) => new Notice(String(error)));
                 }),
         );

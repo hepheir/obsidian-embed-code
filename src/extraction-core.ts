@@ -118,7 +118,7 @@ export function extractionPath(input: string, notePath: string): string {
     return path;
 }
 
-export function suggestedName(language: string): string {
+export function suggestedName(language: string, fallback = "txt"): string {
     const extensions: Record<string, string> = {
         python: "py",
         javascript: "js",
@@ -140,6 +140,57 @@ export function suggestedName(language: string): string {
             language,
         )
             ? language
-            : "txt");
+            : normalizeExtractionExtension(fallback));
     return `code.${extension}`;
+}
+
+// 설정 경로는 항상 Vault 루트 기준이며 숨김·상위 경로를 허용하지 않습니다.
+export function normalizeExtractionDirectory(value: string): string {
+    const path = value.trim().replace(/^\/+|\/+$/g, "");
+    if (
+        /[\\\[\]#|\x00-\x1f:*?"<>]/.test(path) ||
+        path
+            .split("/")
+            .some(
+                (part) => part.startsWith(".") || (part === "" && path !== ""),
+            )
+    )
+        throw Error("Vault 내부의 유효한 저장 폴더를 입력하세요.");
+    return path;
+}
+
+export function normalizeExtractionExtension(value: string): string {
+    const extension = value.trim().replace(/^\./, "").toLowerCase();
+    if (!/^[a-z0-9]+$/.test(extension))
+        throw Error("기본 확장자는 영문 또는 숫자로 입력하세요.");
+    return extension;
+}
+
+export function automaticExtractionPath(
+    notePath: string,
+    language: string,
+    directory: string,
+    fallback: string,
+    now: Date,
+): string {
+    const folder = normalizeExtractionDirectory(directory);
+    normalizeExtractionExtension(fallback);
+    const basename = notePath
+        .split("/")
+        .pop()!
+        .replace(/\.[^.]+$/, "");
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const time = [
+        now.getFullYear() % 100,
+        now.getMonth() + 1,
+        now.getDate(),
+        now.getHours(),
+        now.getMinutes(),
+        now.getSeconds(),
+    ]
+        .map(pad)
+        .join("");
+    const extension = suggestedName(language, fallback).slice(5);
+    const name = `${basename}_${time}.${extension}`;
+    return extractionPath(`/${folder ? folder + "/" : ""}${name}`, notePath);
 }

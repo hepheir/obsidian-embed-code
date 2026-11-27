@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { findFences } from "../src/extraction-core";
-import type { ExtractionService, ExtractionPrompts } from "../src/extraction";
+import type { ExtractionService } from "../src/extraction";
 
 // Obsidian 런타임 대신 최소 Vault를 사용하여 저장 순서와 실패 시 동작을 검증합니다.
 async function harness() {
@@ -26,7 +26,7 @@ async function harness() {
                     }));
                     b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
                         contents:
-                            "export class TFile { constructor(path) { this.path = path; } } export class TFolder {} export class MarkdownView {} export class PluginSettingTab {} export class Setting {}",
+                            "export class TFile { constructor(path) { this.path = path; } } export class TFolder {} export class MarkdownView {} export class PluginSettingTab {} export class Setting {} export class AbstractInputSuggest {}",
                     }));
                 },
             },
@@ -43,7 +43,11 @@ async function harness() {
     let failNote = false;
     const plugin = {
         register() {},
-        settings: { extensions: "mmd,py,txt" },
+        settings: {
+            extensions: "mmd,py,txt",
+            extractionDirectory: "scripts/nested",
+            extractionDefaultExtension: "txt",
+        },
         app: {
             workspace: {
                 on() {
@@ -83,15 +87,11 @@ async function harness() {
     };
     const service: ExtractionService = new runtime.ExtractionService(plugin);
     const input = { file, text: original, fence: findFences(original)[0] };
-    const prompts: ExtractionPrompts = {
-        path: async () => "scripts/code.mmd",
-        overwrite: async () => true,
-    };
     return {
         runtime,
         service,
         input,
-        prompts,
+        plugin,
         original,
         contents,
         files,
@@ -104,106 +104,95 @@ async function harness() {
     };
 }
 
-test("service creates folders, saves Mermaid source, then replaces only the fence", async () => {
+test("creates configured folders and replaces only the fence", async () => {
     const h = await harness();
-    await h.service.extract(h.input, h.prompts);
-    assert.equal(
-        h.contents.get("notes/scripts/code.mmd"),
-        "graph LR\n  A-->B\n",
-    );
-    assert.equal(
-        h.contents.get(h.input.file.path),
-        "intro\n![[/notes/scripts/code.mmd]]\n",
-    );
-    assert.ok(h.files.has("notes/scripts"));
+    await h.service.extract(h.input);
+    const path = [...h.contents.keys()].find(
+        (path) => path !== h.input.file.path,
+    )!;
+    assert.match(path, /^scripts\/nested\/note_\d{12}\.mmd$/);
+    assert.equal(h.contents.get(path), "graph LR\n  A-->B\n");
+    assert.equal(h.contents.get(h.input.file.path), `intro\n![[/${path}]]\n`);
+    assert.ok(h.files.has("scripts/nested"));
 });
 
-test("save failure and changed source leave the original note untouched", async () => {
+test("save failure and changed source leave the note untouched", async () => {
     const h = await harness();
     h.setFailWrite();
-    await assert.rejects(h.service.extract(h.input, h.prompts), /write failed/);
+    await assert.rejects(h.service.extract(h.input), /write failed/);
     assert.equal(h.contents.get(h.input.file.path), h.original);
     const other = await harness();
-    other.prompts.path = async () => {
-        other.contents.set(other.input.file.path, "changed");
-        return "code.mmd";
-    };
-    await assert.rejects(
-        other.service.extract(other.input, other.prompts),
-        /대상 코드/,
-    );
-    assert.equal(other.contents.has("notes/code.mmd"), false);
+    other.contents.set(other.input.file.path, "changed");
+    await assert.rejects(other.service.extract(other.input), /대상 코드/);
+    assert.equal(other.contents.size, 1);
 });
 
-test("cancelled overwrite returns to path input and destination changes abort overwrite", async () => {
-    const h = await harness();
-    const destination = new h.runtime.TFile("notes/code.mmd");
-    h.files.set(destination.path, destination);
-    h.contents.set(destination.path, "old");
-    let count = 0;
-    h.prompts.path = async () => (++count === 1 ? "code.mmd" : null);
-    h.prompts.overwrite = async () => false;
-    await h.service.extract(h.input, h.prompts);
-    assert.equal(count, 2);
-    assert.equal(h.contents.get(destination.path), "old");
-    h.prompts.path = async () => "code.mmd";
-    h.prompts.overwrite = async () => {
-        h.contents.set(destination.path, "external change");
-        return true;
-    };
-    await assert.rejects(
-        h.service.extract(h.input, h.prompts),
-        /덮어쓰기 대상이 변경/,
-    );
-    assert.equal(h.contents.get(destination.path), "external change");
-    assert.equal(h.contents.get(h.input.file.path), h.original);
-});
-
-test("note replacement failure reports saved path and retains source", async () => {
+test("replacement failure reports saved path and retains saved source", async () => {
     const h = await harness();
     h.setFailNote();
-    await assert.rejects(
-        h.service.extract(h.input, h.prompts),
-        /notes\/scripts\/code.mmd에 저장했지만/,
-    );
+    await assert.rejects(h.service.extract(h.input), /에 저장했지만/);
     assert.equal(h.contents.get(h.input.file.path), h.original);
-    assert.ok(h.contents.has("notes/scripts/code.mmd"));
+    assert.equal(h.contents.size, 2);
 });
 
-test("settings migration adds mmd once and respects subsequent removal", async () => {
+test("collisions with files and folders get suffixes without overwriting", async () => {
+    const h = await harness();
+    const lookup = h.plugin.app.vault.getAbstractFileByPath;
+    h.plugin.app.vault.getAbstractFileByPath = (path) => {
+        if (/note_\d{12}\.mmd$/.test(path)) return new h.runtime.TFile(path);
+        if (/note_\d{12}_2\.mmd$/.test(path)) return new h.runtime.TFolder();
+        return lookup(path);
+    };
+    await h.service.extract(h.input);
+    assert.ok([...h.contents.keys()].some((path) => /_3\.mmd$/.test(path)));
+});
+
+test("defaults, root destination, fallback and unsupported extensions", async () => {
+    const h = await harness();
+    const defaults = h.runtime.loadSettings(null);
+    assert.equal(defaults.extractionDirectory, "");
+    assert.equal(defaults.extractionDefaultExtension, "txt");
+    h.plugin.settings.extractionDirectory = "";
+    h.input.fence.language = "unknown";
+    await h.service.extract(h.input);
+    assert.ok(
+        [...h.contents.keys()].some((path) => /^note_\d{12}\.txt$/.test(path)),
+    );
+    const other = await harness();
+    other.plugin.settings.extensions = "txt";
+    await assert.rejects(
+        other.service.extract(other.input),
+        /지원하지 않는 확장자/,
+    );
+    assert.equal(other.contents.size, 1);
+});
+
+test("invalid directory and a file blocking a folder abort before saving", async () => {
+    const h = await harness();
+    h.plugin.settings.extractionDirectory = "../outside";
+    await assert.rejects(h.service.extract(h.input), /저장 폴더/);
+    h.plugin.settings.extractionDirectory = "blocked/nested";
+    h.files.set("blocked", new h.runtime.TFile("blocked"));
+    await assert.rejects(h.service.extract(h.input), /폴더 경로에 파일/);
+    assert.equal(h.contents.size, 1);
+});
+
+test("concurrent extraction is rejected", async () => {
+    const h = await harness();
+    const pending = h.service.extract(h.input);
+    await assert.rejects(h.service.extract(h.input), /진행중/);
+    await pending;
+});
+
+test("settings migration adds mmd once and respects removal", async () => {
     const { runtime } = await harness();
     assert.equal(
         runtime.loadSettings({ extensions: "py,js" }).extensions,
         "py,js,mmd",
     );
     assert.equal(
-        runtime.loadSettings({ extensions: "py,mmd" }).extensions,
-        "py,mmd",
-    );
-    assert.equal(
         runtime.loadSettings({ extensions: "py", extractionVersion: 1 })
             .extensions,
         "py",
-    );
-});
-
-test("confirmed overwrite saves exact source and concurrent extraction is rejected", async () => {
-    const h = await harness();
-    const destination = new h.runtime.TFile("notes/code.mmd");
-    h.files.set(destination.path, destination);
-    h.contents.set(destination.path, "old");
-    let release!: (path: string | null) => void;
-    h.prompts.path = () =>
-        new Promise((resolve) => {
-            release = resolve;
-        });
-    const pending = h.service.extract(h.input, h.prompts);
-    await assert.rejects(h.service.extract(h.input, h.prompts), /진행중/);
-    release("code.mmd");
-    await pending;
-    assert.equal(h.contents.get(destination.path), "graph LR\n  A-->B\n");
-    assert.equal(
-        h.contents.get(h.input.file.path),
-        "intro\n![[/notes/code.mmd]]\n",
     );
 });
