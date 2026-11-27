@@ -120,6 +120,31 @@ class EmbedWidget extends WidgetType {
             this.plugin,
             this.embedTarget,
             this.notePath,
+            () => {
+                // 재사용된 위젯도 현재 문서의 위치로 변환합니다.
+                const position = view.posAtDOM(container);
+                const line = view.state.doc.lineAt(position);
+                const matches = Array.from(
+                    line.text.matchAll(/!\[\[([^\]\n]+)\]\]/g),
+                );
+                const match = matches.find((candidate) => {
+                    const start = line.from + candidate.index!;
+                    return (
+                        candidate[1] === this.embedTarget &&
+                        (start === position ||
+                            (line.text.trim() === candidate[0] &&
+                                position === line.from))
+                    );
+                });
+                if (!match)
+                    throw new Error("임베드 위치를 확인할 수 없습니다.");
+                const from = line.from + match.index! + 3;
+                view.dispatch({
+                    selection: { anchor: from, head: from + match[1].length },
+                    scrollIntoView: true,
+                });
+                view.focus();
+            },
         );
         this.embed.load();
         const resizeObserver = new ResizeObserver(() => view.requestMeasure());

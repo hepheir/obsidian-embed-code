@@ -1,4 +1,11 @@
-import { TFile, Notice, setIcon, setTooltip, type App } from "obsidian";
+import {
+    TFile,
+    Notice,
+    Platform,
+    setIcon,
+    setTooltip,
+    type App,
+} from "obsidian";
 import { getFileExtension, splitLines, type CodeSnippet } from "./core";
 import type { CodeEmbedSettings } from "./settings";
 
@@ -20,6 +27,7 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 
 interface RenderOptions {
     app: App;
+    onEdit: () => void | Promise<void>;
     embedTarget: string;
     sourcePath: string;
     snippet: CodeSnippet;
@@ -36,7 +44,40 @@ export function renderCodeSnippet(
     const details = document.createElement("details");
     details.open = !settings.collapsed;
     const summary = document.createElement("summary");
-    summary.textContent = embedTarget;
+    const filename = document.createElement("span");
+    filename.className = "code-embed-filename";
+    filename.textContent = embedTarget;
+    filename.onclick = (event) => {
+        const openModifier = Platform.isMacOS ? event.metaKey : event.ctrlKey;
+        if (event.button !== 0 || !openModifier) {
+            return;
+        }
+        // 보조키 클릭으로 원본을 열 때는 접기·펼치기를 실행하지 않습니다.
+        event.preventDefault();
+        event.stopPropagation();
+        void openSourceFile(app, sourcePath).catch(
+            (error: unknown) => new Notice(String(error)),
+        );
+    };
+    filename.ondblclick = (event) => {
+        if (
+            event.button !== 0 ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            event.shiftKey
+        ) {
+            return;
+        }
+        // 파일명에서만 편집을 실행하고 상위 에디터의 더블클릭 처리를 막습니다.
+        event.preventDefault();
+        event.stopPropagation();
+        void Promise.resolve()
+            .then(() => options.onEdit())
+            .catch((error: unknown) => new Notice(String(error)));
+    };
+    setTooltip(filename, "더블클릭하여 임베드 수정");
+    summary.append(filename);
     details.append(summary);
     details.append(createToolbar(app, snippet.text, sourcePath));
     const body = document.createElement("div");
@@ -101,15 +142,19 @@ function createToolbar(
         await navigator.clipboard.writeText(sourceText);
         new Notice("코드를 복사했습니다.");
     });
-    addIconButton("원본 열기", "external-link", async () => {
-        const file = app.vault.getAbstractFileByPath(path);
-        if (file instanceof TFile) {
-            await app.workspace.getLeaf(false).openFile(file);
-        } else {
-            await app.workspace.openLinkText(path, "");
-        }
-    });
+    addIconButton("원본 열기", "external-link", () =>
+        openSourceFile(app, path),
+    );
     return toolbar;
+}
+
+async function openSourceFile(app: App, path: string): Promise<void> {
+    const file = app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+        await app.workspace.getLeaf(false).openFile(file);
+    } else {
+        await app.workspace.openLinkText(path, "");
+    }
 }
 
 // 강조한 코드를 행별로 복제해 여러 줄 주석과 문자열의 색상을 유지합니다.

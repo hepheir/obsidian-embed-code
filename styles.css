@@ -18,6 +18,9 @@
     font-family: var(--font-monospace);
     overflow-wrap: anywhere;
 }
+.code-embed-filename:hover {
+    text-decoration: underline;
+}
 .code-embed-tools {
     display: flex;
     position: absolute;

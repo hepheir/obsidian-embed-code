@@ -2,6 +2,7 @@ import { Plugin } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { Embed, processReadingEmbeds } from "./embed";
 import { createEditorExtension, refreshEmbedsEffect } from "./editor";
+import { registerExtraction } from "./extract-ui";
 import { CodeSource } from "./source";
 import {
     EmbedSettings,
@@ -21,6 +22,8 @@ export default class CodeEmbed extends Plugin {
     async onload(): Promise<void> {
         this.settings = loadSettings(await this.loadData());
         this.addSettingTab(new EmbedSettings(this));
+        await this.saveData(this.settings);
+        registerExtraction(this);
         this.registerMarkdownPostProcessor((container, context) =>
             processReadingEmbeds(this, container, context),
         );
