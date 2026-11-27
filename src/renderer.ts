@@ -27,6 +27,7 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 
 interface RenderOptions {
     app: App;
+    onEdit: () => void | Promise<void>;
     embedTarget: string;
     sourcePath: string;
     snippet: CodeSnippet;
@@ -60,7 +61,9 @@ export function renderCodeSnippet(
     };
     summary.append(filename);
     details.append(summary);
-    details.append(createToolbar(app, snippet.text, sourcePath));
+    details.append(
+        createToolbar(app, snippet.text, sourcePath, options.onEdit),
+    );
     const body = document.createElement("div");
     body.className = "code-embed-body";
     if (settings.lineNumbers) {
@@ -99,6 +102,7 @@ function createToolbar(
     app: App,
     sourceText: string,
     path: string,
+    onEdit: () => void | Promise<void>,
 ): HTMLElement {
     const toolbar = document.createElement("div");
     toolbar.className = "code-embed-tools";
@@ -126,6 +130,7 @@ function createToolbar(
     addIconButton("원본 열기", "external-link", () =>
         openSourceFile(app, path),
     );
+    addIconButton("임베드 수정", "pencil", async () => onEdit());
     return toolbar;
 }
 

@@ -70,7 +70,11 @@ test("filename modifier clicks share source opening with the toolbar", async () 
             },
         };
         const container = window.document.createElement("div");
+        let edits = 0;
         renderCodeSnippet(container, {
+            onEdit: () => {
+                edits++;
+            },
             app,
             embedTarget: "code.ts#L2-L3",
             sourcePath: "folder/code.ts",
@@ -122,6 +126,13 @@ test("filename modifier clicks share source opening with the toolbar", async () 
             .querySelector('[aria-label="원본 열기"]')!
             .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         assert.equal(opened.at(-1), file);
+        const edit = container.querySelector('[aria-label="임베드 수정"]')!;
+        const count = opened.length;
+        const wasOpen = details.open;
+        edit.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        assert.equal(edits, 1);
+        assert.equal(opened.length, count);
+        assert.equal(details.open, wasOpen);
         fail = true;
         click({ metaKey: true });
         await new Promise((resolve) => setImmediate(resolve));

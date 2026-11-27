@@ -1,5 +1,6 @@
 import {
     MarkdownRenderChild,
+    MarkdownView,
     loadPrism,
     type MarkdownPostProcessorContext,
 } from "obsidian";
@@ -19,7 +20,40 @@ export function processReadingEmbeds(
     const embedElements = container.querySelectorAll<HTMLElement>(
         ".internal-embed[src]",
     );
-    for (const embedElement of Array.from(embedElements)) {
+    // DOM을 교체하기 전에 같은 섹션 내 반복 임베드의 순서를 보존합니다.
+    const elements = Array.from(embedElements);
+    const locations = elements.map((element) => {
+        const section = context.getSectionInfo(element);
+        const target = element.getAttribute("src")!;
+        if (!section) return undefined;
+        const peers = elements.filter((candidate) => {
+            const other = context.getSectionInfo(candidate);
+            return (
+                candidate.getAttribute("src") === target &&
+                other?.lineStart === section.lineStart &&
+                other.lineEnd === section.lineEnd
+            );
+        });
+        const matches = Array.from(
+            section.text.matchAll(/!\[\[([^\]\n]+)\]\]/g),
+        ).filter((match) => {
+            const line =
+                section.text.slice(0, match.index).split("\n").length - 1;
+            return (
+                line >= section.lineStart &&
+                line <= section.lineEnd &&
+                (match[1] === target || match[1].split("|")[0] === target)
+            );
+        });
+        if (matches.length !== peers.length) return undefined;
+        const match = matches[peers.indexOf(element)];
+        return {
+            text: section.text,
+            from: match.index! + 3,
+            length: match[1].length,
+        };
+    });
+    for (const [index, embedElement] of elements.entries()) {
         const embedTarget = embedElement.getAttribute("src")!;
         if (!supportsTarget(embedTarget, plugin.settings)) {
             continue;
@@ -27,7 +61,50 @@ export function processReadingEmbeds(
         const embedContainer = document.createElement("div");
         embedElement.replaceWith(embedContainer);
         context.addChild(
-            new Embed(embedContainer, plugin, embedTarget, context.sourcePath),
+            new Embed(
+                embedContainer,
+                plugin,
+                embedTarget,
+                context.sourcePath,
+                async () => {
+                    const location = locations[index];
+                    const view = plugin.app.workspace
+                        .getLeavesOfType("markdown")
+                        .map((leaf) => leaf.view)
+                        .find(
+                            (candidate): candidate is MarkdownView =>
+                                candidate instanceof MarkdownView &&
+                                candidate.file?.path === context.sourcePath &&
+                                candidate.containerEl.contains(embedContainer),
+                        );
+                    if (
+                        !location ||
+                        !view ||
+                        view.getViewData() !== location.text
+                    )
+                        throw new Error(
+                            "임베드 위치가 변경되었거나 확인할 수 없습니다. 노트를 새로 연 뒤 다시 시도해 주세요.",
+                        );
+                    await view.leaf.setViewState({
+                        type: "markdown",
+                        state: { ...view.getState(), mode: "source" },
+                    });
+                    if (
+                        view.file?.path !== context.sourcePath ||
+                        view.editor.getValue() !== location.text
+                    )
+                        throw new Error(
+                            "노트 내용이 변경되어 임베드 선택을 중단했습니다.",
+                        );
+                    const start = view.editor.offsetToPos(location.from);
+                    const end = view.editor.offsetToPos(
+                        location.from + location.length,
+                    );
+                    view.editor.setSelection(start, end);
+                    view.editor.scrollIntoView({ from: start, to: end }, true);
+                    view.editor.focus();
+                },
+            ),
         );
     }
 }
@@ -41,6 +118,7 @@ export class Embed extends MarkdownRenderChild {
         readonly plugin: CodeEmbed,
         readonly embedTarget: string,
         readonly notePath: string,
+        readonly onEdit: () => void | Promise<void>,
     ) {
         super(container);
     }
@@ -90,6 +168,7 @@ export class Embed extends MarkdownRenderChild {
             }
             renderCodeSnippet(container, {
                 app: this.plugin.app,
+                onEdit: this.onEdit,
                 embedTarget: this.embedTarget,
                 sourcePath,
                 snippet,
