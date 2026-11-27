@@ -13,6 +13,7 @@ import {
 import { EditorView } from "@codemirror/view";
 import type CodeEmbed from "./main";
 import { findFences } from "./extraction-core";
+import { resolveExtractionTarget } from "./extraction-target";
 import {
     ExtractionService,
     type ExtractionInput,
@@ -153,16 +154,14 @@ export function registerExtraction(plugin: CodeEmbed): void {
                 // 렌더링 위젯은 화면 좌표가 fence 끝에 매핑될 수 있어 원본 섹션을 우선합니다.
                 const target =
                     event.target instanceof Element ? event.target : null;
-                const rendered = target?.closest(
-                    "pre, .mermaid, [class*='block-language-']",
-                );
                 let mapped: MarkdownPostProcessorContext | undefined;
-                for (
-                    let node = rendered;
-                    node instanceof HTMLElement && !mapped;
-                    node = node.parentElement
-                ) {
-                    mapped = sections.get(node);
+                let mappedContainer: HTMLElement | undefined;
+                for (let node = target; node; node = node.parentElement) {
+                    if (node instanceof HTMLElement && sections.has(node)) {
+                        mapped = sections.get(node);
+                        mappedContainer = node;
+                        break;
+                    }
                 }
                 let offset = view.posAtCoords({
                     x: event.clientX,
@@ -175,19 +174,18 @@ export function registerExtraction(plugin: CodeEmbed): void {
                         /* 대상을 특정할 수 없으면 메뉴를 추가하지 않습니다. */
                     }
                 }
-                if (mapped) {
-                    const section = mapped.getSectionInfo(
-                        rendered as HTMLElement,
+                if (mapped && mappedContainer && target) {
+                    const resolved = resolveExtractionTarget(
+                        target,
+                        mappedContainer,
+                        mapped,
                     );
-                    if (!section || section.text !== view.state.doc.toString())
+                    if (
+                        !resolved ||
+                        resolved.text !== view.state.doc.toString()
+                    )
                         return false;
-                    const blocks = findFences(section.text).filter(
-                        (block) =>
-                            block.lineStart >= section.lineStart &&
-                            block.lineEnd <= section.lineEnd,
-                    );
-                    if (blocks.length !== 1) return false;
-                    offset = blocks[0].from;
+                    offset = resolved.fence.from;
                 }
                 if (offset !== null && info?.editor)
                     clicked = { editor: info.editor, offset, time: Date.now() };
@@ -216,55 +214,41 @@ export function registerExtraction(plugin: CodeEmbed): void {
         }),
     );
     plugin.registerMarkdownPostProcessor((container, context) => {
-        const selector = "pre, .mermaid, [class*='block-language-']";
         sections.set(container, context);
-        for (const rendered of Array.from(
-            container.querySelectorAll<HTMLElement>(selector),
-        ))
-            sections.set(rendered, context);
         const child = new MarkdownRenderChild(container);
         context.addChild(child);
         children.add(child);
-        child.register(() => children.delete(child));
-        child.registerDomEvent(
-            container,
-            "contextmenu",
-            (event: MouseEvent) => {
-                if (
-                    !plugin.settings.enabled ||
-                    event.defaultPrevented ||
-                    container.closest(".markdown-source-view") ||
-                    !(event.target instanceof Element)
-                )
-                    return;
-                // 렌더러 경계를 사용하여 인접한 블록과 혼동하지 않습니다.
-                const rendered = event.target.closest(
-                    "pre, .mermaid, .block-language-mermaid, [class*='block-language-']",
-                );
-                if (
-                    !(rendered instanceof HTMLElement) ||
-                    !container.contains(rendered) ||
-                    rendered.closest(".code-embed")
-                )
-                    return;
-                const section = context.getSectionInfo(rendered);
-                if (!section) return;
-                const blocks = findFences(section.text).filter(
-                    (block) =>
-                        block.lineStart >= section.lineStart &&
-                        block.lineEnd <= section.lineEnd,
-                );
-                if (blocks.length !== 1) return;
-                const file = plugin.app.vault.getAbstractFileByPath(
-                    context.sourcePath,
-                );
-                if (!(file instanceof TFile)) return;
-                event.preventDefault();
-                event.stopPropagation();
-                const menu = new Menu();
-                addItem(menu, { file, text: section.text, fence: blocks[0] });
-                menu.showAtMouseEvent(event);
-            },
+        child.register(() => {
+            children.delete(child);
+            sections.delete(container);
+        });
+        const onContextMenu = (event: MouseEvent) => {
+            if (
+                !plugin.settings.enabled ||
+                container.closest(".markdown-source-view") ||
+                !(event.target instanceof Element)
+            )
+                return;
+            const resolved = resolveExtractionTarget(
+                event.target,
+                container,
+                context,
+            );
+            if (!resolved) return;
+            const file = plugin.app.vault.getAbstractFileByPath(
+                context.sourcePath,
+            );
+            if (!(file instanceof TFile)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const menu = new Menu();
+            addItem(menu, { file, ...resolved });
+            menu.showAtMouseEvent(event);
+        };
+        // 하위 렌더러의 버블링 중단이나 DOM 교체에도 우클릭을 관찰합니다.
+        container.addEventListener("contextmenu", onContextMenu, true);
+        child.register(() =>
+            container.removeEventListener("contextmenu", onContextMenu, true),
         );
     }, 1000);
 }
