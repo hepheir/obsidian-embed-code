@@ -97,12 +97,12 @@ semantic-release 설정은 `release.config.cjs`에서 관리한다. 준비 스�
 ```mermaid
 flowchart LR
     Reading[읽기 화면 우클릭] --> UI[extract-ui.ts: 대상 식별과 메뉴·모달]
-    Editor[라이브 프리뷰 editor-menu] --> UI
+    Editor[라이브 프리뷰 캡처 이벤트 / editor-menu] --> UI
     UI --> Service[extraction.ts: 원문 추적·저장·치환]
     Service --> Core[extraction-core.ts: fence 파싱·변경 추적·경로 검증]
     Service --> Vault[Vault / 열린 노트 에디터]
 ```
 
-UI는 `extraction-target.ts`의 공통 식별기로 원본 위치를 확인하고 공통 변환 서비스에 전달한다. 읽기 화면과 라이브 프리뷰는 안정적인 컨테이너에서 이벤트를 관찰하고, 우클릭 시점에 섹션 정보를 조회한다. 기본 pre·Mermaid와 Shiki/Expressive Code의 제목·행 번호를 포함한 블록 경계를 지원하며, 알 수 없는 렌더러는 섹션이 정확히 하나의 fence에 대응할 때만 허용한다. DOM 교체 후에도 원문 위치를 사용하며, 여러 fence가 섞인 모호한 섹션은 추측하지 않는다. 서비스는 DOM이나 마우스 이벤트에 의존하지 않으며 저장 설정으로 경로를 자동 생성한다. 설정의 저장 폴더는 Vault 루트 기준이며 빈 값은 루트다. 폴더 입력은 공개 AbstractInputSuggest API로 부분 검색을 제공한다. 파일명은 노트명_YYMMDDHHmmss.확장자이며 충돌 시 _2부터 번호를 붙인다. 알 수 없는 언어는 설정한 기본 확장자(txt)를 사용한다. 아이콘 버튼은 추가하지 않는다. Mermaid도 원본 fence를 추출하며 `.mmd` 임베드는 원문으로 표시한다.
+UI는 `extraction-target.ts`의 공통 식별기로 원본 위치를 확인하고 공통 변환 서비스에 전달한다. 읽기 화면과 라이브 프리뷰는 안정적인 컨테이너에서 이벤트를 관찰하고, 우클릭 시점에 섹션 정보를 조회한다. 기본 pre·Mermaid와 Shiki/Expressive Code의 제목·행 번호를 포함한 블록 경계를 지원하며, 알 수 없는 렌더러는 섹션이 정확히 하나의 fence에 대응할 때만 허용한다. 라이브 프리뷰의 렌더링된 code·pre·외부 렌더러는 CodeMirror DOM의 캡처 이벤트에서 직접 메뉴를 열어 editor-menu 발생 여부에 의존하지 않는다. 일반 편집 영역은 기존 editor-menu를 사용한다. DOM 교체 후에도 원문 위치를 사용하며, 여러 fence가 섞인 모호한 섹션은 추측하지 않는다. 서비스는 DOM이나 마우스 이벤트에 의존하지 않으며 저장 설정으로 경로를 자동 생성한다. 설정의 저장 폴더는 Vault 루트 기준이며 빈 값은 루트다. 폴더 입력은 공개 AbstractInputSuggest API로 부분 검색을 제공한다. 파일명은 노트명_YYMMDDHHmmss.확장자이며 충돌 시 _2부터 번호를 붙인다. 알 수 없는 언어는 설정한 기본 확장자(txt)를 사용한다. 아이콘 버튼은 추가하지 않는다. Mermaid도 원본 fence를 추출하며 `.mmd` 임베드는 원문으로 표시한다.
 
 저장 전에 원문과 경로를 검사하며 기존 파일은 덮어쓰지 않는다. 파일 저장 후에만 노트를 치환하며, 치환 실패 시 저장된 경로를 안내한다. 열린 에디터의 변경은 추적하고 대상에 닿은 변경은 변환을 중단한다. 실행 취소는 노트만 되돌린다.

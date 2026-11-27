@@ -7,7 +7,7 @@ import {
     editorLivePreviewField,
     type MarkdownPostProcessorContext,
 } from "obsidian";
-import { EditorView } from "@codemirror/view";
+import { EditorView, ViewPlugin } from "@codemirror/view";
 import type CodeEmbed from "./main";
 import { findFences } from "./extraction-core";
 import { resolveExtractionTarget } from "./extraction-target";
@@ -32,6 +32,88 @@ export function registerExtraction(plugin: CodeEmbed): void {
                 }),
         );
     };
+    // 외부 렌더러에서는 Obsidian의 editor-menu가 발생하지 않을 수 있습니다.
+    plugin.registerEditorExtension(
+        ViewPlugin.fromClass(
+            class {
+                private readonly onContextMenu = (event: MouseEvent) => {
+                    clicked = undefined;
+                    const view = this.view;
+                    if (
+                        !plugin.settings.enabled ||
+                        !view.state.field(editorLivePreviewField, false) ||
+                        !(event.target instanceof Element) ||
+                        !event.target.closest(
+                            "code, pre, .expressive-code, .shiki, .mermaid, [class*='block-language-']",
+                        ) ||
+                        event.target.closest(".code-embed")
+                    )
+                        return;
+                    const info = view.state.field(editorInfoField, false);
+                    if (!info?.file) return;
+                    const text = view.state.doc.toString();
+                    let input: ExtractionInput | undefined;
+                    let hasContext = false;
+                    for (
+                        let node: Element | null = event.target;
+                        node && view.dom.contains(node);
+                        node = node.parentElement
+                    ) {
+                        const context = sections.get(node as HTMLElement);
+                        if (!context) continue;
+                        hasContext = true;
+                        const resolved = resolveExtractionTarget(
+                            event.target,
+                            node as HTMLElement,
+                            context,
+                        );
+                        if (resolved?.text === text)
+                            input = { file: info.file, ...resolved };
+                        break;
+                    }
+                    if (!hasContext) {
+                        // Shiki의 CM6 강조는 post processor 없이 mark decoration으로 생성됩니다.
+                        let offset = view.posAtCoords({
+                            x: event.clientX,
+                            y: event.clientY,
+                        });
+                        if (offset === null) {
+                            try {
+                                offset = view.posAtDOM(event.target);
+                            } catch {
+                                return;
+                            }
+                        }
+                        const fence = findFences(text).find(
+                            (block) =>
+                                block.from <= offset! && offset! < block.to,
+                        );
+                        if (fence) input = { file: info.file, text, fence };
+                    }
+                    if (!input) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const menu = new Menu();
+                    addItem(menu, input);
+                    menu.showAtMouseEvent(event);
+                };
+                constructor(private readonly view: EditorView) {
+                    view.dom.addEventListener(
+                        "contextmenu",
+                        this.onContextMenu,
+                        true,
+                    );
+                }
+                destroy() {
+                    this.view.dom.removeEventListener(
+                        "contextmenu",
+                        this.onContextMenu,
+                        true,
+                    );
+                }
+            },
+        ),
+    );
     // 기본 에디터 메뉴가 생성되기 전에 우클릭 위치만 기록합니다.
     let clicked: { editor: unknown; offset: number; time: number } | undefined;
     plugin.registerEditorExtension(
